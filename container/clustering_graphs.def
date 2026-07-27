@@ -1,0 +1,129 @@
+Bootstrap: docker
+From: python:3.11-slim-bookworm
+
+%labels
+    Author bkoloski
+    Version 1.0
+    Description Spectral clustering of text embeddings - MLJ rebuttal. Code is bind-mounted at runtime via container/run.sh; the SIF holds only the uv-managed venv so the experiment scripts can be edited in place without rebuilding.
+
+%files
+    requirements.txt /opt/clustgraphs/requirements.txt
+
+%post
+    set -eu
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential gcc g++ git curl ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    # uv (fast, deterministic pip replacement)
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="/root/.local/bin:$PATH"
+    export UV_HTTP_TIMEOUT=600
+    export UV_HTTP_RETRIES=10
+
+    # isolated venv at a fixed path so the run.sh wrapper can find it
+    python3 -m venv /opt/venv
+
+    # PyTorch 2.4.1+cu121 wheels include the CUDA runtime libs, so we do NOT need
+    # the nvidia/cuda base image. TITAN V (sm_70), A100 (sm_80), H100 (sm_90) all
+    # work with these wheels. For Blackwell/sm_120, bump to a torch with cu128
+    # (see reference_kt95_blackwell memory).
+    uv pip install --python /opt/venv/bin/python --no-cache \
+        "torch==2.4.1" \
+        --index-url https://download.pytorch.org/whl/cu121
+
+    # Project dependencies. Keep this file in sync with container/requirements.txt
+    # at the repo root; do NOT pin transitive deps here -- let uv resolve them.
+    uv pip install --python /opt/venv/bin/python --no-cache \
+        -r /opt/clustgraphs/requirements.txt
+
+    # pyamg is critical: sklearn.manifold.spectral_embedding(eigen_solver='amg')
+    # silently falls back to a much slower arpack solver (or errors out on some
+    # graphs) when pyamg is missing. main.py:150 requests 'amg' explicitly.
+    uv pip install --python /opt/venv/bin/python --no-cache "pyamg==5.2.1"
+
+    # Shrink the final image. Do NOT touch /tmp/* -- under --fakeroot the host's
+    # /tmp is bind-mounted into the build env, so deleting it would try to
+    # clobber host files we don't own (and the rm errors would abort %post).
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /root/.cache
+
+    # Build-time verification: every import main.py uses must succeed, and the
+    # AMG eigen-solver code path must actually run.
+    /opt/venv/bin/python - <<'PY'
+import torch, numpy, scipy, sklearn, sentence_transformers, mteb, networkx, pyamg, tqdm
+from mteb import MTEB
+from mteb.abstasks.AbsTask import AbsTask
+from mteb.abstasks.AbsTaskClustering import AbsTaskClustering
+from mteb.evaluation.evaluators.Evaluator import Evaluator
+from sklearn.manifold import spectral_embedding
+from sklearn.cluster import KMeans
+from sklearn.metrics.cluster import homogeneity_completeness_v_measure
+from scipy.sparse import csr_matrix, lil_matrix, csgraph
+from scipy.sparse.csgraph import minimum_spanning_tree
+from scipy.linalg import LinAlgError, qr, svd
+
+print('IMPORTS OK')
+print(f'  torch                 {torch.__version__} (cuda built-in: {torch.version.cuda})')
+print(f'  sklearn               {sklearn.__version__}')
+print(f'  scipy                 {scipy.__version__}')
+print(f'  numpy                 {numpy.__version__}')
+print(f'  mteb                  {mteb.__version__}')
+print(f'  sentence_transformers {sentence_transformers.__version__}')
+print(f'  pyamg                 {pyamg.__version__}')
+print(f'  networkx              {networkx.__version__}')
+
+import numpy as np
+from scipy.sparse import csr_matrix
+rng = np.random.RandomState(0)
+N = 100
+A = (rng.rand(N, N) < 0.1).astype(float)
+A = ((A + A.T) > 0).astype(float)
+for i in range(N - 1):
+    A[i, i + 1] = 1.0
+    A[i + 1, i] = 1.0
+S = csr_matrix(A)
+maps = spectral_embedding(S, n_components=3, eigen_solver='amg', drop_first=True)
+print(f'AMG SMOKE OK -- spectral_embedding returned shape {maps.shape}')
+
+subclasses = AbsTaskClustering.__subclasses__()
+print(f'MTEB DISCOVERY OK -- {len(subclasses)} AbsTaskClustering subclasses visible')
+PY
+
+%environment
+    export PATH=/opt/venv/bin:$PATH
+    # NOTE: do NOT bake NVIDIA_VISIBLE_DEVICES / NVIDIA_DRIVER_CAPABILITIES here.
+    # Baking them makes apptainer attempt nvidia-container-cli on EVERY exec —
+    # even plain CPU ones — which is FATAL on nodes lacking that binary (Vega
+    # GPU nodes are heterogeneous; several don't have it, and its CPU nodes
+    # never will). GPU access is requested at runtime with `--nv` instead, and
+    # only on jobs that actually need a GPU. This keeps the SIF runnable on any
+    # node, GPU or CPU.
+    export TOKENIZERS_PARALLELISM=false
+    export PYTHONUNBUFFERED=1
+    export PYTHONDONTWRITEBYTECODE=1
+
+%runscript
+    cd /workspace 2>/dev/null || cd /
+    exec /opt/venv/bin/python "$@"
+
+%help
+    Spectral clustering of text embeddings -- MLJ rebuttal container.
+
+    The SIF holds only Python + the uv-managed venv at /opt/venv. Source code
+    is bind-mounted at /workspace at runtime so edits to src/main.py take
+    effect on the next invocation -- no rebuild needed.
+
+    Recommended invocation (uses the wrapper that sets bind mounts and env):
+        container/run.sh src/main.py --help
+        USE_GPU=1 container/run.sh src/encode.py --model all-MiniLM-L12-v2 --task TwentyNewsgroupsClustering
+
+    Direct invocation (manual bind):
+        singularity exec --nv \
+          --bind $(pwd):/workspace \
+          --bind $HOME/clustering_graphs/cache:/cache \
+          --env HF_HOME=/cache/hf \
+          container/clustgraphs.sif \
+          /opt/venv/bin/python src/main.py

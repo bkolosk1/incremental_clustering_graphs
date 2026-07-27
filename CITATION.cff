@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the accompanying paper."
+title: "Incremental Graph Construction Enables Robust Spectral Clustering of Texts"
+authors:
+  - family-names: "Pranjić"
+    given-names: "Marko"
+  - family-names: "Koloski"
+    given-names: "Boshko"
+    email: "boshko.koloski@ijs.si"
+  - family-names: "Lavrač"
+    given-names: "Nada"
+  - family-names: "Pollak"
+    given-names: "Senja"
+  - family-names: "Robnik-Šikonja"
+    given-names: "Marko"
+license: Apache-2.0
+repository-code: "https://github.com/bkolosk1/incremental_clustering_graphs"

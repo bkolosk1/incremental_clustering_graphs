@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.sif
+results/
+results_arnes/
+cache/
+figures/
+logs/
+*.jsonl
+.ipynb_checkpoints/
