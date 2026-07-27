@@ -53,17 +53,6 @@ All datasets are the public MTEB clustering tasks and are downloaded automatical
 
 The generators expect the JSONL outputs under `results_arnes/<run-name>/` relative to the repository root; adjust the `RES` constant in `scripts/make_tables.py` if you keep them elsewhere.
 
-### The MST-combination audit
-
-The submitted version of the paper combined the MST with the base graph in mismatched index spaces. The driver exposes both variants so the audit is reproducible:
-
-```bash
-python src/main.py --methods NN --mst on --mst-mode corrected ...   # used throughout the paper
-python src/main.py --methods NN --mst on --mst-mode paper ...       # the submitted behavior
-```
-
-`scripts/mst_audit.py` quantifies the difference.
-
 ## Hardware note
 
 The cost benchmark (Table 8) was run on a CPU node of the Vega EuroHPC system (2× 64-core AMD EPYC 7H12, 256 GB RAM), single process, four BLAS/OpenMP threads; library versions are pinned in the container image.
