@@ -2,6 +2,8 @@
 
 Code accompanying the paper *"Incremental Graph Construction Enables Robust Spectral Clustering of Texts"* (Pranjić, Koloski, Lavrač, Pollak, Robnik-Šikonja). The incremental k-NN construction inserts nodes one at a time and links each new node to its k nearest already-inserted nodes, which guarantees a connected neighborhood graph for every k.
 
+![Overview: spectral-clustering pipeline and standard vs. incremental k-NN graph construction](docs/overview.png)
+
 ## Layout
 
 ```
