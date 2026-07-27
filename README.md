@@ -11,7 +11,6 @@ src/ordering.py        node-insertion orderings: random / centroid / class / tem
 scripts/make_tables.py regenerates every data-derived table body in the paper
 scripts/make_figures.py regenerates the per-dataset result figures (Figures 2-3)
 scripts/cost_benchmark.py fair construction-cost benchmark (Table 8)
-scripts/mst_audit.py   audit of the corrected vs. submitted MST combination
 scripts/*.sbatch       the exact SLURM scripts used for every experiment
 scripts/smoke_test.sh  ~2-minute end-to-end verification on a CPU box
 container/             Apptainer/Singularity recipe pinning the environment
